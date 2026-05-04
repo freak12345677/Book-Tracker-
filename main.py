@@ -1,136 +1,224 @@
-# console_version.py - консольная версия Book Tracker
+import customtkinter as ctk
 import json
 import os
 
-class BookTrackerConsole:
-    def __init__(self):
+ctk.set_appearance_mode("light")
+ctk.set_default_color_theme("blue")
+
+class BookTracker:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Book Tracker")
+        self.root.geometry("900x650")
+        
         self.books = []
         self.load_data()
-        self.run()
+        
+        self.create_widgets()
+        self.refresh_display()
     
-    def run(self):
-        while True:
-            print("\n" + "="*50)
-            print("📚 BOOK TRACKER - Консольная версия")
-            print("="*50)
-            print("1. Добавить книгу")
-            print("2. Показать все книги")
-            print("3. Фильтр по жанру")
-            print("4. Фильтр по страницам")
-            print("5. Удалить книгу")
-            print("6. Сохранить и выйти")
-            
-            choice = input("\nВыберите действие: ")
-            
-            if choice == "1":
-                self.add_book()
-            elif choice == "2":
-                self.show_books(self.books)
-            elif choice == "3":
-                self.filter_by_genre()
-            elif choice == "4":
-                self.filter_by_pages()
-            elif choice == "5":
-                self.delete_book()
-            elif choice == "6":
-                self.save_data()
-                print("Данные сохранены! До свидания!")
-                break
-            else:
-                print("Неверный выбор!")
+    def create_widgets(self):
+        # Заголовок
+        title = ctk.CTkLabel(self.root, text="📚 Book Tracker", font=("Arial", 24, "bold"))
+        title.pack(pady=10)
+        
+        # Форма ввода
+        input_frame = ctk.CTkFrame(self.root)
+        input_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(input_frame, text="Название:").grid(row=0, column=0, padx=5, pady=5)
+        self.title_entry = ctk.CTkEntry(input_frame, width=200)
+        self.title_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+        ctk.CTkLabel(input_frame, text="Автор:").grid(row=0, column=2, padx=5, pady=5)
+        self.author_entry = ctk.CTkEntry(input_frame, width=150)
+        self.author_entry.grid(row=0, column=3, padx=5, pady=5)
+        
+        ctk.CTkLabel(input_frame, text="Жанр:").grid(row=1, column=0, padx=5, pady=5)
+        self.genre_entry = ctk.CTkEntry(input_frame, width=150)
+        self.genre_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        ctk.CTkLabel(input_frame, text="Страниц:").grid(row=1, column=2, padx=5, pady=5)
+        self.pages_entry = ctk.CTkEntry(input_frame, width=100)
+        self.pages_entry.grid(row=1, column=3, padx=5, pady=5)
+        
+        self.add_btn = ctk.CTkButton(input_frame, text="➕ Добавить книгу", command=self.add_book,
+                                      fg_color="#4CAF50", hover_color="#45a049")
+        self.add_btn.grid(row=2, column=0, columnspan=4, pady=10)
+        
+        # Фильтры
+        filter_frame = ctk.CTkFrame(self.root)
+        filter_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(filter_frame, text="Фильтр по жанру:").pack(side="left", padx=5)
+        self.genre_filter = ctk.CTkComboBox(filter_frame, values=["Все"], width=150, state="readonly")
+        self.genre_filter.pack(side="left", padx=5)
+        self.genre_filter.set("Все")
+        self.genre_filter.bind("<<ComboboxSelected>>", lambda e: self.apply_filters())
+        
+        ctk.CTkLabel(filter_frame, text="Страниц >").pack(side="left", padx=(20, 5))
+        self.pages_filter = ctk.CTkEntry(filter_frame, width=80)
+        self.pages_filter.pack(side="left", padx=5)
+        self.pages_filter.bind('<KeyRelease>', lambda e: self.apply_filters())
+        
+        self.reset_btn = ctk.CTkButton(filter_frame, text="Сбросить", command=self.clear_filters,
+                                        fg_color="#9E9E9E", width=100)
+        self.reset_btn.pack(side="left", padx=20)
+        
+        # Таблица
+        table_frame = ctk.CTkFrame(self.root)
+        table_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Создаём Treeview через ttk
+        from tkinter import ttk
+        scroll_y = ttk.Scrollbar(table_frame)
+        scroll_y.pack(side="right", fill="y")
+        
+        scroll_x = ttk.Scrollbar(table_frame, orient="horizontal")
+        scroll_x.pack(side="bottom", fill="x")
+        
+        columns = ("Название", "Автор", "Жанр", "Страницы")
+        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings",
+                                  yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+        
+        for col in columns:
+            self.tree.heading(col, text=col)
+        
+        self.tree.column("Название", width=250)
+        self.tree.column("Автор", width=150)
+        self.tree.column("Жанр", width=120)
+        self.tree.column("Страницы", width=80)
+        
+        self.tree.pack(fill="both", expand=True)
+        scroll_y.config(command=self.tree.yview)
+        scroll_x.config(command=self.tree.xview)
+        
+        # Кнопки
+        btn_frame = ctk.CTkFrame(self.root)
+        btn_frame.pack(fill="x", padx=20, pady=10)
+        
+        self.del_btn = ctk.CTkButton(btn_frame, text="🗑 Удалить", command=self.delete_book,
+                                      fg_color="#f44336", hover_color="#da190b")
+        self.del_btn.pack(side="left", padx=5)
+        
+        self.save_btn = ctk.CTkButton(btn_frame, text="💾 Сохранить", command=self.save_data,
+                                       fg_color="#2196F3")
+        self.save_btn.pack(side="left", padx=5)
+        
+        self.clear_btn = ctk.CTkButton(btn_frame, text="⚠️ Очистить всё", command=self.clear_all,
+                                        fg_color="#FF9800")
+        self.clear_btn.pack(side="right", padx=5)
+        
+        # Статистика
+        self.stats_label = ctk.CTkLabel(self.root, text="", font=("Arial", 10))
+        self.stats_label.pack(pady=5)
     
     def add_book(self):
-        print("\n--- Добавление книги ---")
-        title = input("Название: ").strip()
-        author = input("Автор: ").strip()
-        genre = input("Жанр: ").strip()
+        title = self.title_entry.get().strip()
+        author = self.author_entry.get().strip()
+        genre = self.genre_entry.get().strip()
+        pages = self.pages_entry.get().strip()
         
-        while True:
-            try:
-                pages = int(input("Страницы: ").strip())
-                if pages > 0:
-                    break
-                else:
-                    print("Страницы должны быть > 0!")
-            except ValueError:
-                print("Введите число!")
-        
-        self.books.append({
-            "title": title,
-            "author": author,
-            "genre": genre,
-            "pages": pages
-        })
-        self.save_data()
-        print(f"\n✅ Книга '{title}' добавлена!")
-    
-    def show_books(self, books):
-        if not books:
-            print("\n📭 Нет книг в списке!")
+        if not all([title, author, genre, pages]):
+            from tkinter import messagebox
+            messagebox.showerror("Ошибка", "Заполните все поля!")
             return
         
-        print("\n" + "="*80)
-        print(f"{'№':<3} {'Название':<30} {'Автор':<20} {'Жанр':<15} {'Стр':<6}")
-        print("="*80)
+        try:
+            pages = int(pages)
+            if pages <= 0:
+                raise ValueError
+        except ValueError:
+            from tkinter import messagebox
+            messagebox.showerror("Ошибка", "Страниц должно быть число > 0!")
+            return
         
-        for i, book in enumerate(books, 1):
-            print(f"{i:<3} {book['title']:<30} {book['author']:<20} {book['genre']:<15} {book['pages']:<6}")
+        self.books.append({"title": title, "author": author, "genre": genre, "pages": pages})
+        
+        self.title_entry.delete(0, "end")
+        self.author_entry.delete(0, "end")
+        self.genre_entry.delete(0, "end")
+        self.pages_entry.delete(0, "end")
+        
+        self.update_genre_list()
+        self.save_data()
+        self.refresh_display()
+        
+        from tkinter import messagebox
+        messagebox.showinfo("Успех", f"Книга '{title}' добавлена!")
+    
+    def update_genre_list(self):
+        genres = sorted(set(b["genre"] for b in self.books))
+        self.genre_filter.configure(values=["Все"] + genres)
+    
+    def apply_filters(self):
+        filtered = self.books.copy()
+        
+        genre = self.genre_filter.get()
+        if genre and genre != "Все":
+            filtered = [b for b in filtered if b["genre"] == genre]
+        
+        pages_val = self.pages_filter.get().strip()
+        if pages_val:
+            try:
+                pages_num = int(pages_val)
+                filtered = [b for b in filtered if b["pages"] > pages_num]
+            except:
+                pass
+        
+        self.display_books(filtered)
+    
+    def display_books(self, books):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        for book in books:
+            self.tree.insert("", "end", values=(book["title"], book["author"], book["genre"], book["pages"]))
         
         total_pages = sum(b["pages"] for b in books)
-        print("="*80)
-        print(f"Всего книг: {len(books)} | Всего страниц: {total_pages}")
+        self.stats_label.configure(text=f"📊 Показано: {len(books)} книг | Всего страниц: {total_pages} | Всего в базе: {len(self.books)}")
     
-    def filter_by_genre(self):
-        genres = sorted(set(b["genre"] for b in self.books))
-        if not genres:
-            print("Нет книг для фильтрации!")
-            return
-        
-        print(f"\nДоступные жанры: {', '.join(genres)}")
-        genre = input("Введите жанр: ").strip()
-        
-        filtered = [b for b in self.books if b["genre"].lower() == genre.lower()]
-        
-        if filtered:
-            self.show_books(filtered)
-        else:
-            print(f"Книги жанра '{genre}' не найдены!")
+    def refresh_display(self):
+        self.update_genre_list()
+        self.apply_filters()
     
-    def filter_by_pages(self):
-        try:
-            pages = int(input("Минимальное количество страниц: "))
-            filtered = [b for b in self.books if b["pages"] > pages]
-            
-            if filtered:
-                self.show_books(filtered)
-            else:
-                print(f"Нет книг с количеством страниц > {pages}!")
-        except ValueError:
-            print("Введите число!")
+    def clear_filters(self):
+        self.genre_filter.set("Все")
+        self.pages_filter.delete(0, "end")
+        self.apply_filters()
     
     def delete_book(self):
-        if not self.books:
-            print("Нет книг для удаления!")
+        selected = self.tree.selection()
+        if not selected:
+            from tkinter import messagebox
+            messagebox.showwarning("Внимание", "Выберите книгу!")
             return
         
-        self.show_books(self.books)
-        try:
-            idx = int(input("\nВведите номер книги для удаления: ")) - 1
-            if 0 <= idx < len(self.books):
-                removed = self.books.pop(idx)
-                self.save_data()
-                print(f"✅ Книга '{removed['title']}' удалена!")
-            else:
-                print("Неверный номер!")
-        except ValueError:
-            print("Введите число!")
+        from tkinter import messagebox
+        item = self.tree.item(selected[0])
+        title = item['values'][0]
+        
+        if messagebox.askyesno("Подтверждение", f"Удалить '{title}'?"):
+            self.books = [b for b in self.books if b["title"] != title]
+            self.save_data()
+            self.refresh_display()
+    
+    def clear_all(self):
+        if not self.books:
+            return
+        from tkinter import messagebox
+        if messagebox.askyesno("Внимание", "Удалить ВСЕ книги?"):
+            self.books.clear()
+            self.save_data()
+            self.refresh_display()
     
     def save_data(self):
         try:
             with open("books.json", "w", encoding="utf-8") as f:
                 json.dump(self.books, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Ошибка сохранения: {e}")
+        except:
+            from tkinter import messagebox
+            messagebox.showerror("Ошибка", "Не удалось сохранить!")
     
     def load_data(self):
         if os.path.exists("books.json"):
@@ -141,4 +229,6 @@ class BookTrackerConsole:
                 self.books = []
 
 if __name__ == "__main__":
-    app = BookTrackerConsole()
+    root = ctk.CTk()
+    app = BookTracker(root)
+    root.mainloop()
